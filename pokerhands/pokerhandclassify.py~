@@ -152,11 +152,11 @@ def keras_nn_train():
 	
 	suits = Input(shape=(5,1), dtype='int32', name = 'suits') #integer suit values to be embedded (4 values)
 	ranks = Input(shape=(5,1), dtype='int32', name = 'ranks') #integer card ranks to be embedded (13 values)
-	em1 = Embedding(output_dim=100, input_dim=4, input_length=5)(suits) #4 classes for suits feature
-	em2 = Embedding(output_dim=100, input_dim=13, input_length=5)(ranks)
+	em1 = Embedding(output_dim=7, input_dim=4, input_length=5)(suits) #4 classes for suits feature
+	em2 = Embedding(output_dim=7, input_dim=13, input_length=5)(ranks)
 	T = merge([em1, em2], mode='concat', concat_axis = 1)
 	print T.get_shape()
-	T = Reshape((1000,))(T)
+	T = Reshape((70,))(T)
 	print T.get_shape()
 	T = Dense(128, activation = 'relu')(T)
 	T = Dense(128, activation = 'relu')(T)
