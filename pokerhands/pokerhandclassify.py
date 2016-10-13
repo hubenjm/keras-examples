@@ -59,6 +59,22 @@ def readdata(filename):
 		data_array = np.asarray(data, dtype = np.int)   
 
 	return data_array
+
+def augment_data(Z):
+	"""
+	generate more features as follows:
+		- max number of cards that have the same suit
+		- max number of cards that are in consecutive numerical order (assume that ace can be 1 or 14 effectively)
+		- high card
+		- low card
+		- 
+	"""
+	new_data = np.zeros([Z.shape[0], Z.shape[1] + 4])
+	new_data[:, :Z.shape[1]] = Z
+	for j in xrange(Z.shape[0]):
+		pass
+
+	return new_data
 	
 def bruteforce_classifier_test():
 	testfilename = 'poker-hand-testing.data'
@@ -76,10 +92,36 @@ def bruteforce_classifier_test():
 	
 	accuracy = accuracy*1./float(N)
 	return accuracy
+
+
+def compute_confusion_matrix(Y_test, Y_predicted, nb_classes, normalize = False):
+	"""
+	Given true class values Y_test (shape = (N, nb_classes)) with values lying in range(nb_classes)
+	computes the confusion matrix (shape = (nb_classes, nb_classes)) associated with the 
+	predicted class values Y_predicted (shape = (N, nb_classes))
+	"""
+	#convert data sets to flattened vectors
+	y_test = np.argmax(Y_test, axis = 1)
+	y_predicted = np.argmax(Y_predicted, axis = 1)
+
+	confusion_matrix = np.zeros([nb_classes, nb_classes])
 	
+	for j in range(nb_classes):
+		#slice y_test for indices where the true class is equal to j
+		indices = [i for (i,v) in enumerate(y_test == j) if v == True]
+		
+		for k in range(nb_classes):
+			confusion_matrix[j,k] = np.sum(y_predicted[indices] == k)
+
+		if normalize:
+			#normalize jth row
+			confusion_matrix[j, :] /= float(len(indices))
+	
+	return confusion_matrix
 
 def keras_nn_train():
 	from keras.models import Sequential, Model
+	from keras.callbacks import ModelCheckpoint
 	from keras.layers import Embedding, Permute, Input, Dense, Dropout, Activation, Flatten, Reshape, merge
 	from keras.utils import np_utils
 	from keras import backend as K
@@ -87,7 +129,7 @@ def keras_nn_train():
 	# parameters
 	batch_size = 128 #number of examples per gradient descent step
 	nb_classes = 10 #number of possible hand labels
-	nb_epoch = 12 #number of learning epochs
+	nb_epoch = 20 #number of learning epochs
 
 	# input data dimensions
 	ns_cols = 5
@@ -96,10 +138,6 @@ def keras_nn_train():
 
 	s_indices = [0,2,4,6,8]
 	r_indices = [1,3,5,7,9]
-	#permutation = [0,2,4,6,8,1,3,5,7,9]
-
-	# size of pooling area for max pooling
-	# pool_size = 2
 
 	#data filenames
 	trainingfilename = 'poker-hand-training.data'
@@ -107,15 +145,33 @@ def keras_nn_train():
 
 	#read data
 	Z_train = readdata(trainingfilename)
-	#X_train = Z_train[:, permutation] - 1
+	Z_test = readdata(testfilename)
+
+	k1 = 8
+	k2 = 9 #royal flush and straight flush data
+	zero_batch_size = 10
+
+	###
+	#filter out only a select number of classes
+	Z_train = Z_train[(Z_train[:,-1] == k2) + (Z_train[:,-1] == k1) + (Z_train[:,-1] == 0), :]
+	Z_test = Z_test[(Z_test[:,-1] == k2) + (Z_test[:,-1] == k1) + (Z_test[:,-1] == 0), :]
+
+	#Z_train, Z_test are fixed from now on
+	class_indices_1 = [i for (i,v) in enumerate(Z_train[:,-1] == k1) if v == True]
+	class_indices_2 = [i for (i,v) in enumerate(Z_train[:,-1] == k2) if v == True]
+	no_hand_indices = [i for (i,v) in enumerate(Z_train[:,-1] == 0) if v == True]
+	Z_train[class_indices_1, -1] = 1
+	Z_train[class_indices_2, -1] = 2
+	Z_test[Z_test[:,-1]==k1, -1] = 1
+	Z_test[Z_test[:,-1]==k2, -1] = 2
+
+	###
+	nb_classes = 3
+
 	X_train_suits = Z_train[:, s_indices] - 1
 	X_train_ranks = Z_train[:, r_indices] - 1
 	y_train = Z_train[:,-1]
-	N = Z_train.shape[0]
-	print N
 
-	Z_test = readdata(testfilename)
-	#X_test = Z_test[:, permutation] - 1
 	X_test_suits = Z_test[:, s_indices] - 1
 	X_test_ranks = Z_test[:, r_indices] - 1
 	y_test = Z_test[:,-1]
@@ -124,49 +180,66 @@ def keras_nn_train():
 	X_train_ranks = X_train_ranks.reshape(X_train_ranks.shape[0], nr_cols, 1)
 	X_test_suits = X_test_suits.reshape(X_test_suits.shape[0], ns_cols, 1)
 	X_test_ranks = X_test_ranks.reshape(X_test_ranks.shape[0], nr_cols, 1)
-
-	input_shape = (n_cols, 1)
-
+	
 	# convert class vectors to binary class matrices
 	Y_train = np_utils.to_categorical(y_train, nb_classes)
 	Y_test = np_utils.to_categorical(y_test, nb_classes)
-
-	####
-
-	#add code here to sample from data to proportionally choose from each hand type
-
-	####
-#l1 = Input(batch_shape=(None,), dtype='int32', name='l1')
-#l2 = Input(batch_shape=(None,), dtype='int32', name='l2')
-#l3 = Input(batch_shape=(None,), dtype='int32', name='l3')
-
-#e1 = Embedding(output_dim=60, input_dim=1000, input_length=1)(l1)
-#e2 = Embedding(output_dim=60, input_dim=1000, input_length=1)(l2)
-#e3 = Embedding(output_dim=60, input_dim=20, input_length=1)(l3)
-
-#merged = merge([e1,e2,e3], mode='concat', concat_axis=1)
-#flatten = Reshape((180,)) (merged)
-#activation = Dense(60, activation='tanh')(flatten)
-
-
 	
 	suits = Input(shape=(5,1), dtype='int32', name = 'suits') #integer suit values to be embedded (4 values)
 	ranks = Input(shape=(5,1), dtype='int32', name = 'ranks') #integer card ranks to be embedded (13 values)
-	em1 = Embedding(output_dim=100, input_dim=4, input_length=5)(suits) #4 classes for suits feature
-	em2 = Embedding(output_dim=100, input_dim=13, input_length=5)(ranks)
+	
+	output_dim = 200
+	em1 = Embedding(output_dim=output_dim, input_dim=4, input_length=5)(suits) #4 classes for suits feature
+	em2 = Embedding(output_dim=output_dim, input_dim=13, input_length=5)(ranks) #13 classes for ranks feature
 	T = merge([em1, em2], mode='concat', concat_axis = 1)
-	print T.get_shape()
-	T = Reshape((1000,))(T)
-	print T.get_shape()
+	T = Reshape((output_dim*10,))(T)
 	T = Dense(128, activation = 'relu')(T)
 	T = Dense(128, activation = 'relu')(T)
-	T = Dropout(0.25)(T)
+	T = Dense(128, activation = 'relu')(T)
 	main_output = Dense(nb_classes, activation = 'softmax')(T)
 	model = Model(input=[suits, ranks], output=[main_output])
 	model.compile(loss='categorical_crossentropy', optimizer='adadelta', metrics=['accuracy'])
-	model.fit([X_train_suits, X_train_ranks], Y_train, batch_size=batch_size, nb_epoch=nb_epoch,
-		verbose=1, validation_data=([X_test_suits, X_test_ranks], Y_test))
-	
+
+	# Callback for model saving:
+	checkpointer = ModelCheckpoint(filepath="auto_save_weights.hdf5", verbose=0, save_best_only = True)
+	q = 0.4 #parameter for choosing permutation of cards in hand
+
+	for j in range(nb_epoch):
+#		X_train_ranks_temp = np.copy(X_train_ranks)
+#		X_train_suits_temp = np.copy(X_train_suits)
+		i1 = np.random.choice(no_hand_indices, size = zero_batch_size, replace = False)
+		Z_train_temp = np.vstack((Z_train[class_indices_1, :], Z_train[class_indices_2, :], Z_train[i1, :]))
+		y_train_temp = np.concatenate((Z_train[class_indices_1, -1], Z_train[class_indices_2, -1], Z_train[i1, -1]))
+		X_train_ranks_temp = Z_train_temp[:, r_indices] - 1
+		X_train_suits_temp = Z_train_temp[:, s_indices] - 1
+		
+		#reshape stuff
+		X_train_suits_temp = X_train_suits_temp.reshape(X_train_suits_temp.shape[0], ns_cols, 1)
+		X_train_ranks_temp = X_train_ranks_temp.reshape(X_train_ranks_temp.shape[0], nr_cols, 1)
+		Y_train_temp = np_utils.to_categorical(y_train_temp, nb_classes)
+
+		print "Starting epoch {}...".format(j+1)
+
+		# Add noise on later epochs
+		if j > 0:
+			for k in range(0, X_train_ranks_temp.shape[0]):
+				if np.random.rand(1) > q:				
+					p = np.random.choice(5, size = 5, replace = False)
+					X_train_ranks_temp[k,:,0] = X_train_ranks_temp[k,p,0] #permute
+					X_train_suits_temp[k,:,0] = X_train_suits_temp[k,p,0]
+
+		model.fit([X_train_suits_temp, X_train_ranks_temp], Y_train_temp, batch_size=batch_size, nb_epoch=1,
+				verbose=1, validation_data=([X_test_suits, X_test_ranks], Y_test), callbacks = [checkpointer])
+
+	score = model.evaluate([X_test_suits, X_test_ranks], Y_test, verbose=0)
+	print('Test score:', score[0])
+	print('Test accuracy:', score[1])
+
+	Y_predicted = model.predict([X_test_suits, X_test_ranks])
+
+	confusion_matrix = compute_confusion_matrix(Y_test, Y_predicted, nb_classes, normalize = False)
+	print confusion_matrix
+
 if __name__ == "__main__":
 	keras_nn_train()
 	#print bruteforce_classifier_test()
